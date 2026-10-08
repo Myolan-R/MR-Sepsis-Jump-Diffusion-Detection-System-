@@ -13,14 +13,17 @@ Data
 PhysioNet/Computing in Cardiology Challenge 2019, training Set A (about 20,300 patients, roughly 790,000 hourly rows).
 Set B comes from a different hospital system and is held back as a final test set. It has not been used yet.
 The data is not included in this repository. Download it from the PhysioNet challenge page and place it in a local data/ folder, which is ignored by git.
+
 Method
 Compile the data. Individual patient files are combined into one table (compile_sepsis_data.py).
 Audit missingness. EtCO2 was 100% missing and was dropped. Temperature was about 66% missing and was kept with a wider 20 hour rolling window. Lab values were more than 90% missing, so they are used only as slow changing context through forward fill and a "hours since last update" feature, not for jump detection.
+
 Detect jumps. Jump detection runs only on the eight vitals that are measured close to hourly. A jump is an hourly change larger than three standard deviations of that patient's own rolling variability.
 Add trend features. Rolling trend features capture gradual deterioration, which jump detection alone would miss.
 Count co moves. Co jump and co trend counts measure how often several vitals move abruptly in the same hour.
 Compare cohorts. Covariance and correlation between vitals are compared for septic patients and matched non septic patients.
 Cluster septic patients. K means with k equal to 3 is run on summary features, after removing patients with too many missing summary values.
+
 Fit jump diffusion models. Fitting every patient separately failed, so parameters are now pooled by group (fit_jump_diffusion.py). See the results below.
 Results so far
 Septic patients split into three groups by volatility
@@ -76,7 +79,8 @@ A Jupyter notebook runs the analysis and produces the figures.
 Running the code
 Install Python 3 with numpy, pandas, scipy, scikit-learn and Jupyter.
 Download the PhysioNet 2019 training data into data/.
+
 Run compile_sepsis_data.py, then the notebook, then fit_jump_diffusion.py.
 Data and attribution
 
-Data comes from the PhysioNet/Computing in Cardiology Challenge 2019. Please follow the licence and citation requirements on the PhysioNet page if you reuse it.
+This project uses the PhysioNet/Computing in Cardiology Challenge 2019 dataset, which contains hourly ICU records for patients from two hospital systems, with a label marking sepsis onset. The data is publicly available and is not included in this repository. You can download it from https://physionet.org/content/challenge-2019/1.0.0/ and place the training files in a local folder called data/, which is ignored by git. This project uses training Set A for development, and Set B is held back as a final test set. If you reuse the data, please follow the licence and citation requirements on the PhysioNet page.
