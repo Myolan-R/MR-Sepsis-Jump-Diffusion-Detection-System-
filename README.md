@@ -1,4 +1,3 @@
-# MR-Sepsis-Jump-Diffusion-Detection-System-
 Sepsis Early Warning with Jump Diffusion Features
 
 An in progress Python project that borrows jump diffusion ideas from quantitative finance and applies them to hourly ICU vital signs, to look for early signs of sudden patient deterioration such as sepsis.
@@ -10,21 +9,28 @@ The idea
 In finance, jump diffusion models describe a price that drifts and wobbles most of the time but occasionally makes a sudden, large move. Patient vital signs look similar. Most hours show ordinary variation, but deterioration can appear as abrupt shifts. The project asks whether treating those shifts as "jumps", and measuring how often they happen and how vitals jump together, separates septic patients from non septic patients, and whether septic patients fall into distinct deterioration patterns.
 
 Data
-PhysioNet/Computing in Cardiology Challenge 2019, training Set A (about 20,300 patients, roughly 790,000 hourly rows).
+
+Data comes from the PhysioNet/Computing in Cardiology Challenge 2019, available at https://physionet.org/content/challenge-2019/1.0.0/. The data is publicly available and is not included in this repository. Please follow the licence and citation requirements on the PhysioNet page if you reuse it.
+
+Item	Value
+Training set used	Set A
+Patients	20,336
+Hourly rows	790,215
+Sepsis positive rows	17,136 (2.17% of rows)
+Septic patients	1,790
+Septic patients with history before onset	1,587
+Septic patients clustered	1,429
+
 Set B comes from a different hospital system and is held back as a final test set. It has not been used yet.
-The data is not included in this repository. Download it from the PhysioNet challenge page and place it in a local data/ folder, which is ignored by git.
 
 Method
-Compile the data. Individual patient files are combined into one table (compile_sepsis_data.py).
-Audit missingness. EtCO2 was 100% missing and was dropped. Temperature was about 66% missing and was kept with a wider 20 hour rolling window. Lab values were more than 90% missing, so they are used only as slow changing context through forward fill and a "hours since last update" feature, not for jump detection.
-
-Detect jumps. Jump detection runs only on the eight vitals that are measured close to hourly. A jump is an hourly change larger than three standard deviations of that patient's own rolling variability.
+Compile the data. Individual patient files are combined into one table (Compile_Sepsis_Data.py).
+Audit missingness. EtCO2 was 100% missing and is not used. Temperature was about 66% missing and was kept with a wider 20 hour rolling window. Lab values were more than 90% missing, so they are not jump detected.
+Detect jumps. Jump detection runs on seven vitals that are measured close to hourly after forward filling (heart rate, oxygen saturation, temperature, systolic, mean and diastolic pressure, and respiratory rate). A jump is an hourly change larger than three rolling standard deviations of that patient's own hourly changes, using a 12 hour window (20 hours for temperature).
 Add trend features. Rolling trend features capture gradual deterioration, which jump detection alone would miss.
-Count co moves. Co jump and co trend counts measure how often several vitals move abruptly in the same hour.
-Compare cohorts. Covariance and correlation between vitals are compared for septic patients and matched non septic patients.
-Cluster septic patients. K means with k equal to 3 is run on summary features, after removing patients with too many missing summary values.
-
-Fit jump diffusion models. Fitting every patient separately failed, so parameters are now pooled by group (fit_jump_diffusion.py). See the results below.
+Compare cohorts. Correlations between hourly changes in each vital are compared for septic patients, using the 24 hours before sepsis onset, and non septic patients, using a matched 24 hour window. The matched reference point sits at the median septic onset position, which is 75.7% of the way through the stay.
+Cluster septic patients. Each septic patient's history before onset is summarised, patients with too many missing summary values are removed, and k means with k equal to 3 is run on the scaled features (Clustering_Mechanics.py).
+Fit pooled jump diffusion models. The jump rate, jump size mean and jump size spread are fitted once per group, using pooled data from the three septic clusters and the non septic cohort. Only the drift and ordinary volatility are fitted per patient (Fit_Jump_Diffusion.py and Jump_Diffusion_Model.py).
 Results so far
 Septic patients split into three groups by volatility
 Cluster	Patients	Mean heart rate	Heart rate standard deviation	Heart rate jumps per patient
@@ -36,7 +42,14 @@ Mean heart rate is almost identical across clusters. What separates them is vari
 
 Heart rate moves more closely with blood pressure in septic patients
 
-Heart rate's correlation with systolic, mean and diastolic blood pressure is about 0.06 to 0.08 higher in septic patients than in matched non septic patients. This held up after I found and fixed a data leakage bug in how the non septic reference group was built.
+The correlation between hourly heart rate changes and hourly blood pressure changes is higher in septic patients than in the matched non septic group.
+
+Vital pair	Septic correlation minus non septic correlation
+Heart rate and systolic pressure	0.080
+Heart rate and mean pressure	0.064
+Heart rate and diastolic pressure	0.056
+
+Differences for the other vital pairs are smaller, at 0.035 or less in size. These are small differences in correlation, so I treat them as a hint worth testing and not as a finding. The result held up after I found and fixed a data leakage bug in how the non septic reference group was built.
 
 Pooled jump rate estimates
 
@@ -50,13 +63,13 @@ Oxygen saturation	0.21	0.21	0.50	0.22
 Systolic pressure	0.50	0.50	0.41	0.50
 Respiratory rate	0.50	0.50	0.50	0.50
 
-Temperature models exist only for the non septic group (0.30) and cluster 2 (0.31), because of limited data.
+Temperature models exist only for the non septic group (0.30) and cluster 2 (0.31), because of limited data. Fitting produced 26 group level models and 112,078 patient level models.
 
 What did not work, and what I changed
 
-My first approach fitted a five parameter jump diffusion model to each patient separately. Over half of those fits (52.5%) hit the boundary on the jump rate, because an individual patient has too few observations to estimate jumps reliably.
+My first approach fitted a five parameter jump diffusion model to each patient separately. Of 103,740 patient and vital fits, about 41% hit the lower bound on the jump rate and about 12% hit the upper bound, so more than half were stuck at a boundary. An individual patient has too few jumps to estimate their rate reliably. The code for that earlier run is not included here.
 
-I restructured the fitting into a hybrid. The jump rate, jump size mean and jump size spread are fitted once per group using pooled data, and only the drift and ordinary volatility are fitted per patient, which needs just two parameters. This produced 26 group level models and 112,078 patient level models.
+I restructured the fitting into the pooled approach described above, so the jump parameters are estimated from many patients at once and only two parameters are fitted per patient.
 
 Limitations
 Clusters are not yet validated against outcomes. The clusters were built from jump and volatility features, so it is expected that they separate on those features. Whether they relate to what happens to patients is still untested.
@@ -72,15 +85,16 @@ Lead time test that truncates each held out septic patient's timeline at increas
 Final evaluation on Set B.
 Sensitivity checks with 2 and 2.5 standard deviation thresholds and different label horizons.
 Repository contents
-compile_sepsis_data.py compiles raw patient files into one table.
-Jump_Diffusion_Model.py contains the jump detection and feature code.
-fit_jump_diffusion.py fits the pooled group models and per patient models.
-A Jupyter notebook runs the analysis and produces the figures.
+Compile_Sepsis_Data.py combines the raw patient files into one table.
+Clustering_Mechanics.py builds jump and trend features, summarises septic patients and clusters them.
+Fit_Jump_Diffusion.py runs the pooled fitting across all groups and patients.
+Jump_Diffusion_Model.py contains the jump diffusion likelihood, fitting and jump probability functions.
+Sepsis_detection.ipynb is the exploration notebook, with plots for jump detection, the cohort comparison and cluster selection.
 Running the code
-Install Python 3 with numpy, pandas, scipy, scikit-learn and Jupyter.
-Download the PhysioNet 2019 training data into data/.
+Install Python 3 with pandas, numpy, scipy, scikit-learn, matplotlib, seaborn and Jupyter.
+Download the PhysioNet 2019 training Set A and place the .psv files in data/training_setA/.
+Run python Compile_Sepsis_Data.py.
+Run python Clustering_Mechanics.py, or work through the notebook, to produce septic_cluster_assignments.csv.
+Run python Fit_Jump_Diffusion.py. This is the slow step.
 
-Run compile_sepsis_data.py, then the notebook, then fit_jump_diffusion.py.
-Data and attribution
-
-This project uses the PhysioNet/Computing in Cardiology Challenge 2019 dataset, which contains hourly ICU records for patients from two hospital systems, with a label marking sepsis onset. The data is publicly available and is not included in this repository. You can download it from https://physionet.org/content/challenge-2019/1.0.0/ and place the training files in a local folder called data/, which is ignored by git. This project uses training Set A for development, and Set B is held back as a final test set. If you reuse the data, please follow the licence and citation requirements on the PhysioNet page.
+Generated files such as the combined CSV are ignored by git and are recreated by the scripts. the licence and citation requirements on the PhysioNet page.
