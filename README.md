@@ -26,11 +26,15 @@ Set B comes from a different hospital system and is held back as a final test se
 Method
 Compile the data. Individual patient files are combined into one table (Compile_Sepsis_Data.py).
 Audit missingness. EtCO2 was 100% missing and is not used. Temperature was about 66% missing and was kept with a wider 20 hour rolling window. Lab values were more than 90% missing, so they are not jump detected.
+
 Detect jumps. Jump detection runs on seven vitals that are measured close to hourly after forward filling (heart rate, oxygen saturation, temperature, systolic, mean and diastolic pressure, and respiratory rate). A jump is an hourly change larger than three rolling standard deviations of that patient's own hourly changes, using a 12 hour window (20 hours for temperature).
+
 Add trend features. Rolling trend features capture gradual deterioration, which jump detection alone would miss.
 Compare cohorts. Correlations between hourly changes in each vital are compared for septic patients, using the 24 hours before sepsis onset, and non septic patients, using a matched 24 hour window. The matched reference point sits at the median septic onset position, which is 75.7% of the way through the stay.
+
 Cluster septic patients. Each septic patient's history before onset is summarised, patients with too many missing summary values are removed, and k means with k equal to 3 is run on the scaled features (Clustering_Mechanics.py).
 Fit pooled jump diffusion models. The jump rate, jump size mean and jump size spread are fitted once per group, using pooled data from the three septic clusters and the non septic cohort. Only the drift and ordinary volatility are fitted per patient (Fit_Jump_Diffusion.py and Jump_Diffusion_Model.py).
+
 Results so far
 Septic patients split into three groups by volatility
 Cluster	Patients	Mean heart rate	Heart rate standard deviation	Heart rate jumps per patient
@@ -75,15 +79,23 @@ Limitations
 Clusters are not yet validated against outcomes. The clusters were built from jump and volatility features, so it is expected that they separate on those features. Whether they relate to what happens to patients is still untested.
 Jump rate alone does not clearly separate septic from non septic patients. Heart rate jump rates are similar across groups. Any difference is more likely to be in jump size or in how vitals jump together, and I have not shown that yet.
 Some estimates are unreliable. Respiratory rate and most systolic pressure estimates sit at the fit boundary, likely because those measurements are discrete or narrow in range. Heart rate and MAP are the most trustworthy.
+
 No predictive performance yet. I have not reported accuracy, AUROC or lead time, and I do not claim that the features predict sepsis.
+
 Next steps
+
 Patient level train and test split, with a check that no patient appears in both.
 Baseline classifier on raw vitals, then a gradient boosted model with the jump features added.
 Evaluation using AUROC, recall at a fixed false positive rate, and lead time before sepsis onset. Accuracy is not used, because sepsis hours are rare.
+
 Validate the clusters against outcomes.
+
 Lead time test that truncates each held out septic patient's timeline at increasing distances before onset, and checks when the risk score starts to rise.
+
 Final evaluation on Set B.
+
 Sensitivity checks with 2 and 2.5 standard deviation thresholds and different label horizons.
+
 Repository contents
 Compile_Sepsis_Data.py combines the raw patient files into one table.
 Clustering_Mechanics.py builds jump and trend features, summarises septic patients and clusters them.
